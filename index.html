@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HPTS Tarot Training Planner</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { background: #F5F0FA; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+  input:focus, textarea:focus { outline: none; border-color: #6B5B8D !important; box-shadow: 0 0 0 3px rgba(107,91,141,0.15); }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #D8CCE8; border-radius: 3px; }
+  @media (max-width: 768px) {
+    .planner-sidebar { position: fixed !important; z-index: 100; transform: translateX(-100%); transition: transform 0.3s ease; }
+    .planner-sidebar.open { transform: translateX(0) !important; }
+  }
+  @media (min-width: 769px) { .menu-toggle { display: none !important; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+/* ═══════════════════════════════════════
+   CONSTANTS
+   ═══════════════════════════════════════ */
+
+const STORAGE_KEY = "hpts-planner-data";
+
+const TABS = [
+  { id: "welcome", label: "Welcome", icon: "🏠" },
+  { id: "intentions", label: "Intentions", icon: "✨" },
+  { id: "goals", label: "Goals", icon: "🎯" },
+  { id: "weekly", label: "Weekly Plan", icon: "📅" },
+  { id: "buddy", label: "Study Buddy", icon: "👥" },
+  { id: "roadmap", label: "Roadmap", icon: "🗺️" },
+  { id: "lessons", label: "Lessons", icon: "📚" },
+  { id: "tmc", label: "Tarot Mastery", icon: "🏆" },
+  { id: "certification", label: "Certification", icon: "🎓" },
+  { id: "daily", label: "Daily Readings", icon: "🃏" },
+  { id: "qa", label: "Q & A", icon: "❓" },
+  { id: "dates", label: "Dates", icon: "📌" },
+  { id: "notes", label: "Notes", icon: "📝" },
+];
+
+const MODULE_DATA = [
+  { num: 1, title: "Foundations of the Tarot", steps: [
+    "Tarot for Personal Growth", "Learn the Major Arcana", "Learn the Minor Arcana",
+    "Learn the Court Cards", "Leave any Questions in Q&A", "Submit Completion Survey",
+  ]},
+  { num: 2, title: "Tarot Card Meanings", steps: [
+    "Creating your Study Deck", "Major Arcana Keywords", "Wands Keywords",
+    "Cups Keywords", "Swords Keywords", "Pentacles Keywords",
+    "Court Card Keywords", "Building your Relationship", "Submit Completion Survey",
+  ]},
+  { num: 3, title: "Tarot Readings", steps: [
+    "How to Perform a Reading", "One Card Pulls", "Reading Reflections",
+    "Reading the Spreads", "Reading for Others", "Intuitive Reading",
+    "Readings Demos", "Leave any Questions in Q&A", "Submit Completion Survey",
+  ]},
+  { num: 4, title: "Strengthen Intuition", steps: [
+    "Mindfulness Practice", "3 Essential Tips", "Strengthen Your Intuition",
+    "Intuition Meditation", "Trusting Your Intuition", "Submit a Completion Survey",
+  ]},
+  { num: 5, title: "Step Into Your Magic", steps: [
+    "Stepping into Your Magic", "Stepping into the Spotlight", "Submit Completion Survey",
+  ]},
+];
+
+/* ═══════════════════════════════════════
+   INITIAL STATE & HELPERS
+   ═══════════════════════════════════════ */
+
+function createInitialState() {
+  return {
+    intentions: {
+      dream1: "", dream2: "", dream3: "",
+      steps1: "", steps2: "", steps3: "",
+      motivation: "", resources: "", celebration: "",
+    },
+    goals: [{ goal: "", why: "" }, { goal: "", why: "" }, { goal: "", why: "" }],
+    weekly: {
+      weekOf: "", priorities: "",
+      sessionDate: "", sessionTheme: "", sessionPartner: "", sessionGoals: "",
+      buddyDate: "", buddyGoals: "",
+      todos: ["", "", "", "", "", ""],
+      notes: "",
+    },
+    buddyMeetings: [{ date: "", buddy: "", priorities: "", cards: "", challenges: "", interpretation: "", insights: "" }],
+    modules: MODULE_DATA.map(m => ({
+      begun: "", finished: "", steps: new Array(m.steps.length).fill(false), notes: "",
+    })),
+    certification: {
+      hptsModules: [false, false, false, false, false],
+      readings: new Array(12).fill(false),
+      applied: false,
+    },
+    dailyReadings: Array.from({ length: 7 }, () => ({
+      date: "", powerQuestion: "", card1: "", card2: "", card3: "", card4: "", interpretation: "",
+    })),
+    qa: { questions: ["", "", "", ""], answers: ["", "", "", ""] },
+    dates: {
+      sessions: Array.from({ length: 6 }, () => ({ date: "", time: "" })),
+      events: Array.from({ length: 3 }, () => ({ event: "", location: "", date: "", time: "", notes: "" })),
+    },
+    notes: "",
+    savedLinks: [],
+  };
+}
+
+function deepMerge(target, source) {
+  if (!source) return target;
+  const result = { ...target };
+  for (const key in source) {
+    if (Array.isArray(source[key]) && Array.isArray(target[key])) {
+      result[key] = source[key].length >= target[key].length
+        ? source[key] : [...source[key], ...target[key].slice(source[key].length)];
+    } else if (typeof source[key] === "object" && source[key] !== null && typeof target[key] === "object") {
+      result[key] = deepMerge(target[key], source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
+}
+
+function copyToClipboard(text) {
+  try { navigator.clipboard.writeText(text); return true; }
+  catch(e) {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta); return true;
+  }
+}
+
+/* ═══════════════════════════════════════
+   SHARED STYLES
+   ═══════════════════════════════════════ */
+
+const S = {
+  card: { background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 2px 12px rgba(74,59,107,0.06)", border: "1px solid #E8DFF5" },
+  label: { display: "block", fontSize: 12, fontWeight: 600, color: "#6B5B8D", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.8 },
+  input: { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1.5px solid #D8CCE8", background: "#FAFAFE", fontSize: 14, color: "#2D1F3D", fontFamily: "inherit", transition: "border-color 0.2s, box-shadow 0.2s" },
+  sectionTitle: { fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 24, fontWeight: 600, color: "#4A3B6B", marginBottom: 16, letterSpacing: 0.5 },
+  cardTitle: { fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 16, fontWeight: 600, color: "#4A3B6B", marginBottom: 12 },
+  intro: { fontSize: 14, color: "#6B5B8D", marginBottom: 14, lineHeight: 1.6 },
+  tabBtn: { padding: "7px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.15s" },
+  navItem: { display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, border: "none", cursor: "pointer", color: "rgba(255,255,255,0.85)", fontSize: 13, textAlign: "left", width: "100%", transition: "background 0.15s", background: "transparent" },
+};
+
+/* ═══════════════════════════════════════
+   REUSABLE COMPONENTS
+   ═══════════════════════════════════════ */
+
+function Field({ label, value, onChange, multi, placeholder }) {
+  const Tag = multi ? "textarea" : "input";
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {label && <label style={S.label}>{label}</label>}
+      <Tag style={{ ...S.input, ...(multi ? { minHeight: 90, resize: "vertical" } : {}) }}
+        value={value || ""} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder || ""} rows={multi ? 4 : undefined} />
+    </div>
+  );
+}
+
+function Check({ checked, onChange, label }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", cursor: "pointer", fontSize: 14, color: "#2D1F3D", borderBottom: "1px solid #F0ECF5", userSelect: "none" }} onClick={() => onChange(!checked)}>
+      <span style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", background: checked ? "#6B5B8D" : "#F0ECF5", borderColor: checked ? "#6B5B8D" : "#C4B8D8" }}>
+        {checked && <span style={{ color: "#fff", fontSize: 14, lineHeight: 1 }}>✓</span>}
+      </span>
+      <span style={{ textDecoration: checked ? "line-through" : "none", opacity: checked ? 0.6 : 1 }}>{label}</span>
+    </label>
+  );
+}
+
+function Card({ children, style: extra }) {
+  return <div style={{ ...S.card, ...extra }}>{children}</div>;
+}
+
+function ProgressBar({ value, max, color }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div style={{ width: "100%", height: 8, background: "#F0ECF5", borderRadius: 4, overflow: "hidden", position: "relative" }}>
+      <div style={{ height: "100%", borderRadius: 4, transition: "width 0.4s ease", width: `${pct}%`, background: color || "#6B5B8D" }} />
+      <span style={{ position: "absolute", right: 0, top: -18, fontSize: 11, color: "#9B8BB5", fontWeight: 600 }}>{pct}%</span>
+    </div>
+  );
+}
+
+function CopyBtn({ getText, label }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => { copyToClipboard(getText()); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+  return (
+    <button onClick={handleCopy} style={{
+      display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8,
+      border: "1.5px solid #D8CCE8", background: copied ? "#5BC0BE" : "#F5F0FA",
+      color: copied ? "#fff" : "#6B5B8D", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+    }}>
+      {copied ? "✓ Copied!" : `📋 ${label || "Copy"}`}
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════
+   SECTION COMPONENTS
+   ═══════════════════════════════════════ */
+
+function WelcomeSection() {
+  return (
+    <div style={{ textAlign: "center", padding: "20px 0" }}>
+      <div style={{ fontSize: 48, marginBottom: 12 }}>🔮</div>
+      <h1 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 28, fontWeight: 700, color: "#4A3B6B", marginBottom: 8 }}>Tarot Training Planner</h1>
+      <p style={{ fontSize: 14, color: "#6B5B8D", lineHeight: 1.6, maxWidth: 500, margin: "0 auto 24px" }}>
+        Your guide to learning the Tarot. Track your progress, set intentions, and step into your magic.
+      </p>
+      <Card>
+        <p style={{ margin: 0, lineHeight: 1.7, color: "#4A3B6B" }}>
+          This planner helps you stay organized, track your goals, and maximize your learning potential
+          as you journey through the High Priestess Tarot School. Use the navigation to explore each section
+          — your progress saves automatically.
+        </p>
+      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginTop: 24 }}>
+        {[{ icon: "✨", text: "Set Intentions" }, { icon: "📚", text: "Track Lessons" }, { icon: "🃏", text: "Daily Readings" }, { icon: "🎓", text: "Earn Your Certificate" }].map((item, i) => (
+          <div key={i} style={{ background: "#F0ECF5", borderRadius: 12, padding: "16px 10px", textAlign: "center" }}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>{item.icon}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#4A3B6B" }}>{item.text}</div>
+          </div>
+        ))}
+      </div>
+      <p style={{ marginTop: 24, fontSize: 13, color: "#9B8BB5", fontStyle: "italic" }}>From Tarot Reader, Coach, and Guide — Sunny Sink</p>
+    </div>
+  );
+}
+
+function IntentionsSection({ data, update }) {
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Intention Setting: Chasing Your Dreams</h2>
+      <p style={S.intro}>What are the three most important dreams you want to accomplish this year?</p>
+      <Card>
+        <Field label="Dream One" value={data.dream1} onChange={v => update("dream1", v)} multi placeholder="Describe your first dream..." />
+        <Field label="Dream Two" value={data.dream2} onChange={v => update("dream2", v)} multi placeholder="Describe your second dream..." />
+        <Field label="Dream Three" value={data.dream3} onChange={v => update("dream3", v)} multi placeholder="Describe your third dream..." />
+      </Card>
+      <p style={{ ...S.intro, marginTop: 24 }}>What specific steps do you need to take to reach each dream?</p>
+      <Card>
+        <Field label="Steps for Dream One" value={data.steps1} onChange={v => update("steps1", v)} multi />
+        <Field label="Steps for Dream Two" value={data.steps2} onChange={v => update("steps2", v)} multi />
+        <Field label="Steps for Dream Three" value={data.steps3} onChange={v => update("steps3", v)} multi />
+      </Card>
+      <Card style={{ marginTop: 16 }}>
+        <Field label="How will I stay motivated to pursue these dreams?" value={data.motivation} onChange={v => update("motivation", v)} multi />
+        <Field label="What resources do I need to achieve these dreams?" value={data.resources} onChange={v => update("resources", v)} multi />
+        <Field label="What will I do to celebrate my successes?" value={data.celebration} onChange={v => update("celebration", v)} multi />
+      </Card>
+      <div style={{ marginTop: 12 }}>
+        <CopyBtn label="Export Intentions" getText={() => {
+          let t = "✨ INTENTION SETTING\n\n";
+          t += `Dream One: ${data.dream1 || "(not set)"}\nSteps: ${data.steps1 || "(not set)"}\n\n`;
+          t += `Dream Two: ${data.dream2 || "(not set)"}\nSteps: ${data.steps2 || "(not set)"}\n\n`;
+          t += `Dream Three: ${data.dream3 || "(not set)"}\nSteps: ${data.steps3 || "(not set)"}\n\n`;
+          t += `Motivation: ${data.motivation || "(not set)"}\nResources: ${data.resources || "(not set)"}\nCelebrations: ${data.celebration || "(not set)"}`;
+          return t;
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function GoalsSection({ data, update }) {
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Intention Setting: Setting Goals</h2>
+      {data.map((g, i) => (
+        <Card key={i} style={{ marginBottom: 16 }}>
+          <Field label={`Goal ${i + 1}`} value={g.goal} onChange={v => update(i, "goal", v)} placeholder="What is your goal?" />
+          <Field label="Why it's important" value={g.why} onChange={v => update(i, "why", v)} multi placeholder="Why does this goal matter to you?" />
+        </Card>
+      ))}
+      <CopyBtn label="Export Goals" getText={() => "🎯 GOALS\n\n" + data.map((g, i) => `Goal ${i + 1}: ${g.goal || "(not set)"}\nWhy: ${g.why || "(not set)"}`).join("\n\n")} />
+    </div>
+  );
+}
+
+function WeeklySection({ data, update }) {
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Weekly Study Plan</h2>
+      <Card>
+        <Field label="Week of" value={data.weekOf} onChange={v => update("weekOf", v)} placeholder="e.g. June 23, 2026" />
+        <Field label="Current Priorities" value={data.priorities} onChange={v => update("priorities", v)} multi />
+      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        <Card>
+          <h3 style={S.cardTitle}>Tarot Practice Session</h3>
+          <Field label="Date of Session" value={data.sessionDate} onChange={v => update("sessionDate", v)} />
+          <Field label="This Week's Theme" value={data.sessionTheme} onChange={v => update("sessionTheme", v)} />
+          <Field label="My Reading Partner" value={data.sessionPartner} onChange={v => update("sessionPartner", v)} />
+          <Field label="Goals for This Session" value={data.sessionGoals} onChange={v => update("sessionGoals", v)} multi />
+        </Card>
+        <Card>
+          <h3 style={S.cardTitle}>Study Buddy Meeting</h3>
+          <Field label="Date of Meeting" value={data.buddyDate} onChange={v => update("buddyDate", v)} />
+          <Field label="Goals for This Session" value={data.buddyGoals} onChange={v => update("buddyGoals", v)} multi />
+          <h3 style={{ ...S.cardTitle, marginTop: 16 }}>To Do List</h3>
+          {data.todos.map((t, i) => (
+            <Field key={i} value={t} onChange={v => { const a = [...data.todos]; a[i] = v; update("todos", a); }} placeholder={`Task ${i + 1}`} />
+          ))}
+        </Card>
+      </div>
+      <Card style={{ marginTop: 12 }}><Field label="Notes" value={data.notes} onChange={v => update("notes", v)} multi /></Card>
+      <div style={{ marginTop: 12 }}>
+        <CopyBtn label="Export Weekly Plan" getText={() => {
+          let t = `📅 WEEKLY PLAN — Week of ${data.weekOf || "(not set)"}\n\nPriorities: ${data.priorities || "(not set)"}\n\n`;
+          t += `Practice Session: ${data.sessionDate || ""} | Theme: ${data.sessionTheme || ""}\nGoals: ${data.sessionGoals || ""}\n\n`;
+          t += "To Do:\n" + data.todos.filter(Boolean).map((x, i) => `  ${i + 1}. ${x}`).join("\n");
+          if (data.notes) t += `\n\nNotes: ${data.notes}`;
+          return t;
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function BuddySection({ data, addMeeting, updateMeeting }) {
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Study Buddy Meetings</h2>
+      <Card style={{ marginBottom: 16, background: "#F0ECF5" }}>
+        <h3 style={S.cardTitle}>Guide for Study Buddies</h3>
+        <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0, color: "#4A3B6B" }}>
+          Having a partner to learn Tarot with makes the learning process more enjoyable, supportive,
+          and enriching. Start with a trial meeting, celebrate wins together, share challenges, do a reading,
+          discuss insights, and schedule your next meeting!
+        </p>
+      </Card>
+      {data.map((m, i) => (
+        <Card key={i} style={{ marginBottom: 16 }}>
+          <h3 style={S.cardTitle}>Meeting {i + 1}</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Date" value={m.date} onChange={v => updateMeeting(i, "date", v)} />
+            <Field label="My Study Buddy" value={m.buddy} onChange={v => updateMeeting(i, "buddy", v)} />
+          </div>
+          <Field label="My Priorities" value={m.priorities} onChange={v => updateMeeting(i, "priorities", v)} multi />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Cards Pulled" value={m.cards} onChange={v => updateMeeting(i, "cards", v)} multi />
+            <Field label="Current Challenges" value={m.challenges} onChange={v => updateMeeting(i, "challenges", v)} multi />
+          </div>
+          <Field label="Interpretation" value={m.interpretation} onChange={v => updateMeeting(i, "interpretation", v)} multi />
+          <Field label="Aha's & Insights" value={m.insights} onChange={v => updateMeeting(i, "insights", v)} multi />
+        </Card>
+      ))}
+      <button onClick={addMeeting} style={{ display: "block", width: "100%", padding: 12, borderRadius: 10, border: "2px dashed #D8CCE8", background: "transparent", cursor: "pointer", fontSize: 14, color: "#6B5B8D", fontWeight: 600, marginTop: 12 }}>+ Add Meeting</button>
+    </div>
+  );
+}
+
+function RoadmapSection({ modules }) {
+  const completedSteps = modules.reduce((sum, m) => sum + m.steps.filter(Boolean).length, 0);
+  const totalSteps = modules.reduce((sum, m) => sum + m.steps.length, 0);
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>High Priestess Journey Roadmap</h2>
+      <Card style={{ textAlign: "center", marginBottom: 20 }}>
+        <h3 style={{ ...S.cardTitle, marginBottom: 8 }}>Overall Progress</h3>
+        <ProgressBar value={completedSteps} max={totalSteps} color="linear-gradient(90deg, #5BC0BE, #6B5B8D)" />
+        <p style={{ fontSize: 13, color: "#9B8BB5", margin: "8px 0 0" }}>{completedSteps} of {totalSteps} steps completed</p>
+      </Card>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, position: "relative" }}>
+        <div style={{ position: "absolute", left: 24, top: 30, bottom: 30, width: 3, background: "linear-gradient(to bottom, #5BC0BE, #6B5B8D, #5BC0BE)", borderRadius: 2, zIndex: 0 }} />
+        {MODULE_DATA.map((mod, i) => {
+          const done = modules[i].steps.filter(Boolean).length;
+          const total = mod.steps.length;
+          const complete = done === total;
+          return (
+            <div key={i} style={{ display: "flex", gap: 16, alignItems: "flex-start", position: "relative", zIndex: 1 }}>
+              <div style={{ width: 48, height: 48, borderRadius: "50%", flexShrink: 0, background: complete ? "#5BC0BE" : done > 0 ? "#6B5B8D" : "#D8CCE8", display: "flex", alignItems: "center", justifyContent: "center", color: complete || done > 0 ? "#fff" : "#6B5B8D", fontWeight: 700, fontSize: 18, boxShadow: complete ? "0 0 16px rgba(91,192,190,0.5)" : "none", transition: "all 0.3s" }}>
+                {complete ? "✓" : mod.num}
+              </div>
+              <Card style={{ flex: 1, margin: 0, opacity: complete ? 0.8 : 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <h3 style={{ ...S.cardTitle, margin: 0 }}>{mod.title}</h3>
+                  <span style={{ fontSize: 12, color: "#9B8BB5" }}>{done}/{total}</span>
+                </div>
+                <ProgressBar value={done} max={total} color={complete ? "#5BC0BE" : "#6B5B8D"} />
+              </Card>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LessonsSection({ modules, updateModule }) {
+  const [activeModule, setActiveModule] = useState(0);
+  const mod = MODULE_DATA[activeModule];
+  const modData = modules[activeModule];
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Lesson Planners</h2>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {MODULE_DATA.map((m, i) => {
+          const done = modules[i].steps.filter(Boolean).length;
+          return (
+            <button key={i} onClick={() => setActiveModule(i)} style={{ ...S.tabBtn, background: i === activeModule ? "#6B5B8D" : "#F0ECF5", color: i === activeModule ? "#fff" : "#4A3B6B" }}>
+              M{m.num} {done === m.steps.length ? "✓" : `${done}/${m.steps.length}`}
+            </button>
+          );
+        })}
+      </div>
+      <Card>
+        <h3 style={{ ...S.cardTitle, fontSize: 18 }}>Module {mod.num}: {mod.title}</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <Field label="Date Begun" value={modData.begun} onChange={v => updateModule(activeModule, "begun", v)} placeholder="MM/DD/YYYY" />
+          <Field label="Date Finished" value={modData.finished} onChange={v => updateModule(activeModule, "finished", v)} placeholder="MM/DD/YYYY" />
+        </div>
+        <h4 style={{ fontSize: 14, fontWeight: 700, color: "#4A3B6B", marginBottom: 10, letterSpacing: 1, textTransform: "uppercase" }}>Steps</h4>
+        {mod.steps.map((step, si) => (
+          <Check key={si} label={step} checked={modData.steps[si]} onChange={v => {
+            const arr = [...modData.steps]; arr[si] = v; updateModule(activeModule, "steps", arr);
+          }} />
+        ))}
+        <Field label="Notes" value={modData.notes} onChange={v => updateModule(activeModule, "notes", v)} multi />
+      </Card>
+      <div style={{ marginTop: 12 }}>
+        <CopyBtn label={`Export Module ${mod.num}`} getText={() => {
+          let t = `📚 MODULE ${mod.num}: ${mod.title.toUpperCase()}\n\n`;
+          t += `Date Begun: ${modData.begun || "(not set)"}\nDate Finished: ${modData.finished || "(not set)"}\n\n`;
+          t += "Steps:\n" + mod.steps.map((s, i) => `  ${modData.steps[i] ? "✓" : "○"} ${s}`).join("\n");
+          if (modData.notes) t += `\n\nNotes: ${modData.notes}`;
+          return t;
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function TMCSection() {
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Tarot Mastery Circle</h2>
+      <Card style={{ textAlign: "center", background: "linear-gradient(135deg, #4A3B6B 0%, #6B5B8D 100%)", color: "#fff", padding: 32 }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🏆</div>
+        <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 24, margin: "0 0 12px", fontWeight: 600 }}>Ready to Deepen Your Practice?</h3>
+        <p style={{ fontSize: 14, lineHeight: 1.7, opacity: 0.9, maxWidth: 450, margin: "0 auto 20px" }}>
+          The Tarot Mastery Circle is your path to certification. Access weekly Tarot Practice Sessions,
+          complete your 12 required readings, and earn your HPTS Certified Reader credential.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, marginBottom: 24 }}>
+          {[{ icon: "🔮", text: "Weekly Practice Sessions" }, { icon: "📖", text: "Weekly Spread" }, { icon: "🎓", text: "Certification Path" }, { icon: "👥", text: "Community Support" }].map((item, i) => (
+            <div key={i} style={{ background: "rgba(255,255,255,0.12)", borderRadius: 10, padding: 14 }}>
+              <div style={{ fontSize: 24, marginBottom: 4 }}>{item.icon}</div>
+              <div style={{ fontSize: 12, fontWeight: 500 }}>{item.text}</div>
+            </div>
+          ))}
+        </div>
+        <a href="https://app.funnel-preview.com/for_domain/go.sunnysink.com/check-out1735835653258?updated_at=63a2987bb2125b0023663d06a1c66e71v2&track=0&preview=true" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", background: "#5BC0BE", color: "#fff", padding: "12px 32px", borderRadius: 24, fontWeight: 700, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 14px rgba(91,192,190,0.4)" }}>
+          Join the Tarot Mastery Circle →
+        </a>
+      </Card>
+      <Card style={{ marginTop: 16 }}>
+        <h3 style={S.cardTitle}>About Practice Sessions</h3>
+        <p style={{ fontSize: 13, lineHeight: 1.7, color: "#4A3B6B", margin: "0 0 12px" }}>
+          Each session is one hour long over Zoom.
+          Check the Events Calendar for current session times. Sessions are available for Tarot Mastery Circle members only.
+        </p>
+        <p style={{ fontSize: 13, lineHeight: 1.7, color: "#4A3B6B", margin: 0 }}>
+          Tips: Screenshot or write down the spread before the session, remove distractions,
+          and feel free to ask questions during the session or in the Weekly Q&A.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
+function CertificationSection({ data, updateCert }) {
+  const moduleLabels = [
+    "Foundations of Tarot Module & Completion Survey",
+    "Tarot Card Meanings Module & Completion Survey",
+    "Tarot Readings Module & Completion Survey",
+    "Strengthening Intuition Module & Completion Survey",
+    "Step Into Your Magic Module & Completion Survey",
+  ];
+  const modDone = data.hptsModules.filter(Boolean).length;
+  const readDone = data.readings.filter(Boolean).length;
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>HPTS Tarot Reader Certificate</h2>
+      <Card style={{ textAlign: "center", marginBottom: 16 }}>
+        <div style={{ fontSize: 42, marginBottom: 8 }}>🎓</div>
+        <p style={{ fontSize: 13, color: "#6B5B8D", margin: 0 }}>All requirements must be met to earn your certificate</p>
+      </Card>
+      <Card style={{ marginBottom: 16 }}>
+        <h3 style={S.cardTitle}>High Priestess Tarot School Requirements</h3>
+        <p style={{ fontSize: 12, color: "#9B8BB5", marginBottom: 12 }}>Complete all 5 modules:</p>
+        {moduleLabels.map((label, i) => (
+          <Check key={i} label={label} checked={data.hptsModules[i]} onChange={v => {
+            const arr = [...data.hptsModules]; arr[i] = v; updateCert("hptsModules", arr);
+          }} />
+        ))}
+        <ProgressBar value={modDone} max={5} />
+      </Card>
+      <Card style={{ marginBottom: 16 }}>
+        <h3 style={S.cardTitle}>Tarot Mastery Circle Requirements</h3>
+        <p style={{ fontSize: 12, color: "#9B8BB5", marginBottom: 6 }}>Complete 12 readings and submit a Tarot Reading Reflection Form for each.</p>
+        <p style={{ fontSize: 11, color: "#B8A8CC", marginBottom: 12, fontStyle: "italic" }}>*6 or more must be readings for other people. You must wait 7+ days between submissions.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginBottom: 12 }}>
+          {data.readings.map((r, i) => (
+            <button key={i} onClick={() => { const arr = [...data.readings]; arr[i] = !arr[i]; updateCert("readings", arr); }} style={{
+              width: "100%", aspectRatio: "1", borderRadius: 8, border: `2px solid ${r ? "#5BC0BE" : "#D8CCE8"}`,
+              background: r ? "#5BC0BE" : "#F5F0FA", color: r ? "#fff" : "#9B8BB5",
+              fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s",
+            }}>{r ? "✓" : i + 1}</button>
+          ))}
+        </div>
+        <ProgressBar value={readDone} max={12} color="#5BC0BE" />
+        <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLSd9YCYCXH95sog1WyFzI0gZd_vKcx87sCCy0SsG8P__RtCENg/viewform" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#5BC0BE", fontWeight: 600, textDecoration: "none", padding: "6px 14px", borderRadius: 6, border: "1.5px solid #5BC0BE", display: "inline-block" }}>📝 Tarot Reading Reflection Form</a>
+        </div>
+      </Card>
+      <Card>
+        <h3 style={S.cardTitle}>Apply for Certification</h3>
+        <p style={{ fontSize: 13, lineHeight: 1.7, color: "#4A3B6B", margin: "0 0 12px" }}>
+          Once all 5 module surveys and all 12 reflection forms are submitted, you're ready to apply.
+          Your application will be reviewed within 7 business days, and you'll hear from Sunny via email with your results and feedback.
+        </p>
+        <Check label="I've completed all requirements — ready to apply" checked={data.applied} onChange={v => updateCert("applied", v)} />
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLScL-5uOabnSGWY6H3etK7SyyB6lFm77i7sBMyNjKEfWpYOKWQ/viewform" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", fontSize: 12, color: "#6B5B8D", fontWeight: 600, textDecoration: "none", padding: "6px 14px", borderRadius: 6, border: "1.5px solid #D8CCE8", marginTop: 8, marginBottom: 16 }}>📋 Certification Application</a>
+        <div style={{ padding: 14, background: "linear-gradient(135deg, #F0ECF5 0%, #E8DFF5 100%)", borderRadius: 10, marginBottom: 14 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: "#4A3B6B", margin: "0 0 6px" }}>💳 Pay the Certification Fee</h4>
+          <p style={{ fontSize: 12, lineHeight: 1.7, color: "#6B5B8D", margin: 0 }}>
+            Upon approval, a one-time certification fee of $99 is required to finalize your certification.
+            This is separate from your monthly TMC membership. Payment details will be included in your approval email.
+          </p>
+        </div>
+        <div style={{ padding: 12, background: "#F0ECF5", borderRadius: 8 }}>
+          <h4 style={{ fontSize: 12, fontWeight: 700, color: "#4A3B6B", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 1 }}>Terms & Conditions</h4>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#6B5B8D", lineHeight: 1.8 }}>
+            <li>Must be a current Tarot Mastery Circle member with payments up to date</li>
+            <li>At least 48 hours between Module Completion Surveys</li>
+            <li>At least 7 days between Reading Reflection Forms</li>
+            <li>6+ readings must be for other people</li>
+          </ul>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function DailySection({ data, updateDay }) {
+  const [activeDay, setActiveDay] = useState(0);
+  const day = data[activeDay];
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Daily Readings</h2>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {data.map((d, i) => (
+          <button key={i} onClick={() => setActiveDay(i)} style={{ ...S.tabBtn, minWidth: 52, background: i === activeDay ? "#6B5B8D" : "#F0ECF5", color: i === activeDay ? "#fff" : "#4A3B6B" }}>
+            Day {i + 1} {d.date ? "•" : ""}
+          </button>
+        ))}
+      </div>
+      <Card>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Date" value={day.date} onChange={v => updateDay(activeDay, "date", v)} placeholder="MM/DD/YYYY" />
+          <Field label="Power Question" value={day.powerQuestion} onChange={v => updateDay(activeDay, "powerQuestion", v)} placeholder="What question are you asking the cards today?" />
+        </div>
+        <h4 style={{ fontSize: 14, fontWeight: 700, color: "#4A3B6B", margin: "12px 0 10px", letterSpacing: 1, textTransform: "uppercase" }}>Today's Reading</h4>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+          {["card1", "card2", "card3", "card4"].map((key, i) => (
+            <div key={i} style={{ background: "#F0ECF5", borderRadius: 10, padding: 14, textAlign: "center", minHeight: 80 }}>
+              <div style={{ fontSize: 10, color: "#9B8BB5", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Card {i + 1}</div>
+              <input style={{ ...S.input, textAlign: "center", background: "#fff" }} value={day[key] || ""} onChange={e => updateDay(activeDay, key, e.target.value)} placeholder="Card name" />
+            </div>
+          ))}
+        </div>
+        <Field label="Interpretation" value={day.interpretation} onChange={v => updateDay(activeDay, "interpretation", v)} multi placeholder="What story do the cards tell today?" />
+      </Card>
+      <div style={{ marginTop: 12 }}>
+        <CopyBtn label="Export All Daily Readings" getText={() => {
+          return "🃏 DAILY READINGS\n\n" + data.map((d, i) => {
+            if (!d.date && !d.powerQuestion && !d.interpretation) return null;
+            let t = `— Day ${i + 1} —\nDate: ${d.date || "(not set)"}\nPower Question: ${d.powerQuestion || "(not set)"}`;
+            t += `\nCards: ${[d.card1, d.card2, d.card3, d.card4].filter(Boolean).join(", ") || "(none)"}`;
+            t += `\nInterpretation: ${d.interpretation || "(not set)"}`;
+            return t;
+          }).filter(Boolean).join("\n\n") || "(No readings recorded yet)";
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function QASection({ data, updateQA }) {
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Q&A Questions</h2>
+      <p style={S.intro}>Jot down any questions that come up and ask them in the next live Q&A!</p>
+      <Card>
+        <h3 style={S.cardTitle}>Questions to Ask</h3>
+        {data.questions.map((q, i) => (
+          <Field key={i} label={`Question ${i + 1}`} value={q} onChange={v => { const arr = [...data.questions]; arr[i] = v; updateQA("questions", arr); }} />
+        ))}
+      </Card>
+      <Card style={{ marginTop: 16 }}>
+        <h3 style={S.cardTitle}>Answers</h3>
+        {data.answers.map((a, i) => (
+          <Field key={i} label={`Answer ${i + 1}`} value={a} onChange={v => { const arr = [...data.answers]; arr[i] = v; updateQA("answers", arr); }} multi />
+        ))}
+      </Card>
+    </div>
+  );
+}
+
+function DatesSection({ data, updateDates }) {
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Important Dates</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div>
+          <h3 style={{ ...S.cardTitle, marginBottom: 10 }}>Upcoming Practice Sessions</h3>
+          {data.sessions.map((s, i) => (
+            <Card key={i} style={{ marginBottom: 8, padding: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <Field label="Date" value={s.date} onChange={v => { const a = [...data.sessions]; a[i] = { ...a[i], date: v }; updateDates("sessions", a); }} placeholder="Date" />
+                <Field label="Time" value={s.time} onChange={v => { const a = [...data.sessions]; a[i] = { ...a[i], time: v }; updateDates("sessions", a); }} placeholder="Time" />
+              </div>
+            </Card>
+          ))}
+        </div>
+        <div>
+          <h3 style={{ ...S.cardTitle, marginBottom: 10 }}>Upcoming Events</h3>
+          {data.events.map((e, i) => (
+            <Card key={i} style={{ marginBottom: 8, padding: 12 }}>
+              <Field label="Event" value={e.event} onChange={v => { const a = [...data.events]; a[i] = { ...a[i], event: v }; updateDates("events", a); }} />
+              <Field label="Location" value={e.location} onChange={v => { const a = [...data.events]; a[i] = { ...a[i], location: v }; updateDates("events", a); }} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <Field label="Date" value={e.date} onChange={v => { const a = [...data.events]; a[i] = { ...a[i], date: v }; updateDates("events", a); }} />
+                <Field label="Time" value={e.time} onChange={v => { const a = [...data.events]; a[i] = { ...a[i], time: v }; updateDates("events", a); }} />
+              </div>
+              <Field label="Notes" value={e.notes} onChange={v => { const a = [...data.events]; a[i] = { ...a[i], notes: v }; updateDates("events", a); }} />
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotesSection({ value, onChange, links, onLinksChange }) {
+  const [newTitle, setNewTitle] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const addLink = () => {
+    if (!newTitle.trim() && !newUrl.trim()) return;
+    onLinksChange([...links, { title: newTitle.trim() || newUrl.trim(), url: newUrl.trim() }]);
+    setNewTitle(""); setNewUrl("");
+  };
+  const removeLink = i => { const a = [...links]; a.splice(i, 1); onLinksChange(a); };
+  return (
+    <div>
+      <h2 style={S.sectionTitle}>Notes</h2>
+      <Card>
+        <textarea
+          style={{ ...S.input, minHeight: 300, resize: "vertical", lineHeight: 1.8 }}
+          value={value || ""} onChange={e => onChange(e.target.value)}
+          placeholder="Write down any notes, insights, breakthroughs, or things you want to remember..."
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+          <CopyBtn label="Copy Notes" getText={() => value || ""} />
+        </div>
+      </Card>
+      <div style={{ marginTop: 28 }}>
+        <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 18, fontWeight: 600, color: "#4A3B6B", marginBottom: 12 }}>🔗 My Saved Links</h3>
+        <p style={{ fontSize: 13, color: "#9B8BB5", marginBottom: 14 }}>Save links to spread packs, resources, tools, or anything you want quick access to.</p>
+        {links.length > 0 && (
+          <Card style={{ marginBottom: 16 }}>
+            {links.map((link, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < links.length - 1 ? "1px solid #F0ECF5" : "none" }}>
+                <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ color: "#5BC0BE", fontSize: 14, fontWeight: 500, textDecoration: "none", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {link.title || link.url}
+                </a>
+                <button onClick={() => removeLink(i)} style={{ background: "none", border: "none", color: "#D8CCE8", cursor: "pointer", fontSize: 16, padding: "0 4px", marginLeft: 10, flexShrink: 0 }}>✕</button>
+              </div>
+            ))}
+          </Card>
+        )}
+        <Card>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={{ ...S.label, fontSize: 11 }}>Link Name</label>
+              <input style={S.input} value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. Weekly Spread Pack" onKeyDown={e => e.key === "Enter" && addLink()} />
+            </div>
+            <div>
+              <label style={{ ...S.label, fontSize: 11 }}>URL</label>
+              <input style={S.input} value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://..." onKeyDown={e => e.key === "Enter" && addLink()} />
+            </div>
+          </div>
+          <button onClick={addLink} style={{ marginTop: 10, padding: "8px 20px", borderRadius: 8, border: "none", background: "#6B5B8D", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: (!newTitle.trim() && !newUrl.trim()) ? 0.5 : 1 }}>+ Add Link</button>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
+   MAIN APP
+   ═══════════════════════════════════════ */
+
+function HPTSPlanner() {
+  const [data, setData] = useState(createInitialState());
+  const [activeTab, setActiveTab] = useState("welcome");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const saveTimeout = useRef(null);
+
+  // Load from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setData(deepMerge(createInitialState(), JSON.parse(saved)));
+    } catch (e) { console.log("No saved data:", e); }
+    setLoaded(true);
+  }, []);
+
+  // Auto-save with debounce
+  useEffect(() => {
+    if (!loaded) return;
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => {
+      setSaving(true);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+      catch (e) { console.error("Save failed:", e); }
+      setTimeout(() => setSaving(false), 800);
+    }, 600);
+    return () => { if (saveTimeout.current) clearTimeout(saveTimeout.current); };
+  }, [data, loaded]);
+
+  // Updaters
+  const updateIntentions = (key, val) => setData(d => ({ ...d, intentions: { ...d.intentions, [key]: val } }));
+  const updateGoal = (i, key, val) => setData(d => { const g = [...d.goals]; g[i] = { ...g[i], [key]: val }; return { ...d, goals: g }; });
+  const updateWeekly = (key, val) => setData(d => ({ ...d, weekly: { ...d.weekly, [key]: val } }));
+  const addBuddyMeeting = () => setData(d => ({ ...d, buddyMeetings: [...d.buddyMeetings, { date: "", buddy: "", priorities: "", cards: "", challenges: "", interpretation: "", insights: "" }] }));
+  const updateBuddyMeeting = (i, key, val) => setData(d => { const a = [...d.buddyMeetings]; a[i] = { ...a[i], [key]: val }; return { ...d, buddyMeetings: a }; });
+  const updateModule = (i, key, val) => setData(d => { const m = [...d.modules]; m[i] = { ...m[i], [key]: val }; return { ...d, modules: m }; });
+  const updateCert = (key, val) => setData(d => ({ ...d, certification: { ...d.certification, [key]: val } }));
+  const updateDay = (i, key, val) => setData(d => { const a = [...d.dailyReadings]; a[i] = { ...a[i], [key]: val }; return { ...d, dailyReadings: a }; });
+  const updateQA = (key, val) => setData(d => ({ ...d, qa: { ...d.qa, [key]: val } }));
+  const updateDates = (key, val) => setData(d => ({ ...d, dates: { ...d.dates, [key]: val } }));
+
+  const renderSection = () => {
+    switch (activeTab) {
+      case "welcome": return <WelcomeSection />;
+      case "intentions": return <IntentionsSection data={data.intentions} update={updateIntentions} />;
+      case "goals": return <GoalsSection data={data.goals} update={updateGoal} />;
+      case "weekly": return <WeeklySection data={data.weekly} update={updateWeekly} />;
+      case "buddy": return <BuddySection data={data.buddyMeetings} addMeeting={addBuddyMeeting} updateMeeting={updateBuddyMeeting} />;
+      case "roadmap": return <RoadmapSection modules={data.modules} />;
+      case "lessons": return <LessonsSection modules={data.modules} updateModule={updateModule} />;
+      case "tmc": return <TMCSection />;
+      case "certification": return <CertificationSection data={data.certification} updateCert={updateCert} />;
+      case "daily": return <DailySection data={data.dailyReadings} updateDay={updateDay} />;
+      case "qa": return <QASection data={data.qa} updateQA={updateQA} />;
+      case "dates": return <DatesSection data={data.dates} updateDates={updateDates} />;
+      case "notes": return <NotesSection value={data.notes} onChange={v => setData(d => ({ ...d, notes: v }))} links={data.savedLinks || []} onLinksChange={v => setData(d => ({ ...d, savedLinks: v }))} />;
+      default: return <WelcomeSection />;
+    }
+  };
+
+  if (!loaded) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#F5F0FA", fontFamily: "Georgia, serif", color: "#6B5B8D" }}>
+      <div style={{ textAlign: "center" }}><div style={{ fontSize: 48, marginBottom: 12 }}>🔮</div><p>Loading your planner...</p></div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", color: "#2D1F3D", background: "#F5F0FA" }}>
+      <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} style={{ position: "fixed", top: 10, left: 10, zIndex: 200, background: "#6B5B8D", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+        {menuOpen ? "✕" : "☰"} Menu
+      </button>
+
+      <nav className={`planner-sidebar${menuOpen ? " open" : ""}`} style={{ width: 220, background: "linear-gradient(180deg, #4A3B6B 0%, #6B5B8D 50%, #5B4B7A 100%)", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
+        <div style={{ padding: "20px 16px 12px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+          <div style={{ fontSize: 28 }}>🔮</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>HPTS Planner</div>
+        </div>
+        <div style={{ flex: 1, padding: "8px 8px", display: "flex", flexDirection: "column", gap: 2 }}>
+          {TABS.map(tab => (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMenuOpen(false); }} style={{ ...S.navItem, background: activeTab === tab.id ? "rgba(255,255,255,0.18)" : "transparent", fontWeight: activeTab === tab.id ? 700 : 400 }}>
+              <span style={{ fontSize: 16, width: 24 }}>{tab.icon}</span><span>{tab.label}</span>
+            </button>
+          ))}
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", margin: "6px 0", paddingTop: 6 }}>
+            <a href="https://www.highpriestessts.com/feed" target="_blank" rel="noopener noreferrer" style={{ ...S.navItem, textDecoration: "none", color: "rgba(255,255,255,0.85)" }} onClick={() => setMenuOpen(false)}>
+              <span style={{ fontSize: 16, width: 24 }}>🌐</span><span>Community</span>
+            </a>
+          </div>
+        </div>
+        <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>High Priestess Tarot School<br />Sunny Sink</div>
+        </div>
+      </nav>
+
+      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "10px 24px", display: "flex", justifyContent: "flex-end", borderBottom: "1px solid #E8DFF5", background: "#fff" }}>
+          <span style={{ fontSize: 12, color: "#9B8BB5" }}>{saving ? "✨ Saving..." : "✓ Saved"}</span>
+        </div>
+        <div style={{ padding: 24, maxWidth: 800, width: "100%", margin: "0 auto" }}>
+          {renderSection()}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<HPTSPlanner />);
+</script>
+</body>
+</html>
